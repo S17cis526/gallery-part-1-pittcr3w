@@ -28,8 +28,9 @@ function multipart(req, res, next) {
   // and responding with a 500 server error
   req.on('error', function(err){
     console.log(err);
-    statusCode = 500;
-    statusMessage = "Server error";
+    res.statusCode = 500;
+    res.statusMessage = "Server error";
+    res.end();
   });
 
   // Handle data events by appending the new
