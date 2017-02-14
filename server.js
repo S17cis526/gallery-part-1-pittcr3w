@@ -10,7 +10,7 @@ var url = require('url');
 var fs = require('fs');
 var port = 30022;
 var config = JSON.parse(fs.readFileSync('config.json'));
-
+var multipart = require('./multipart');
 
 var stylesheet = fs.readFileSync('gallery.css');
 
@@ -65,7 +65,7 @@ function buildGallery(imageTags){
 
 }
 
-function serveGallery(req, res){	
+function serveGallery(req, res){
 	getImageNames(function (err, imageNames){
 		if (err){
 			console.error(err);
@@ -77,62 +77,66 @@ function serveGallery(req, res){
 			res.setHeader('Content-Type', 'text/html');
 			res.end(buildGallery(imageNames));
 		});
-			
+
 
 }
 
 
-function uploadImage(req, res){
-	var body = '';
-	req.on('error', function(){
-		res.statusCode = 500;
-		res.end();
-	});
-	req.on('data', function(){
-		body += data;
-	});
-	req.on('end', function(){
-		fs.writeFile('filename', body, function(){
-			if (err){
-				console.error(err);
-				res.end();
-				return;
-			}
-			serveGallery(req, res);
-		});
-	});
+function uploadImage(req, res) {
+  multipart(req, res, function(req, res) {
+    console.log('filename', req.body.filename)
+    if(!req.body.image.filename) {
+      console.error("No file in upload");
+      res.statusCode = 400;
+      res.statusMessage = "No file specified"
+      res.end("No file specified");
+      return;
+    }
+    fs.writeFile('images/' + req.body.image.filename, req.body.image.data, function(err){
+      if(err) {
+        console.error(err);
+        res.statusCode = 500;
+        res.statusMessage = "Server Error";
+        res.end("Server Error");
+        return;
+      }
+      serveGallery(req, res);
+    });
+  });
 }
 
-var server = http.createServer((req, res) => {
-	var urlParse = url.parse(req.url);
+function handleRequest(req, res) {
+  // at most, the url should have two parts -
+  // a resource and a querystring separated by a ?
+  var urlParts = url.parse(req.url);
 
-	if(urlParse.query){
-		var matches = /title=(.+)($|&)/.exec(urlParse.query);
-		if (matches && matches[1]){
-			config.title = decodeURIComponent(matches[1]);
-			fs.writeFile('config.json', JSON.stringify(config));
-		}
-	}
-	
-	switch(urlParse.pathname){
-		case '/':		
-		case '/gallery':
-			if (req.method == 'GET'){
-				serveGallery(req, res);
-			}else if (req.method == 'POST'){
-				uploadImage(req, res);
-			}
-			
-			break;
-		case '/gallery.css':
-			res.setHeader('Content-Type', 'text/css');
-			res.end(stylesheet);
-			break;
-		default:
-			serveImage(req.url, req, res);		
-	}
-});
+  if(urlParts.query){
+    var matches = /title=(.+)($|&)/.exec(urlParts.query);
+    if(matches && matches[1]){
+      config.title = decodeURIComponent(matches[1]);
+      fs.writeFile('config.json', JSON.stringify(config));
+    }
+  }
 
-server.listen(port, ()=>{
-	console.log("Listening on Port " + port);
+  switch(urlParts.pathname) {
+    case '/':
+    case '/gallery':
+      if(req.method == 'GET') {
+        serveGallery(req, res);
+      } else if(req.method == 'POST') {
+        uploadImage(req, res);
+      }
+      break;
+    case '/gallery.css':
+      res.setHeader('Content-Type', 'text/css');
+      res.end(stylesheet);
+      break;
+    default:
+      serveImage(req.url, req, res);
+  }
+}
+
+var server = http.createServer(handleRequest);
+server.listen(port, function(){
+  console.log("Server is listening on port ", port);
 });
